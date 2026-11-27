@@ -1,0 +1,64 @@
+name: Actualisation packaging
+
+on:
+  schedule:
+    - cron: '15 7 * * *'
+      timezone: 'Europe/Paris'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'site/data/**'
+      - 'README.md'
+
+concurrency:
+  group: packaging-pages
+  cancel-in-progress: false
+
+jobs:
+  collecte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pages: read
+    steps:
+      - name: Recuperer le projet
+        uses: actions/checkout@v6
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Tester les calculs
+        run: python -m unittest discover -s tests -v
+      - name: Recuperer les donnees publiques
+        run: python collecte.py
+      - name: Sauvegarder les historiques
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add site/data
+          if ! git diff --cached --quiet; then
+            git commit -m 'Actualisation automatique des donnees [skip ci]'
+            git push origin HEAD:main
+          fi
+      - name: Verifier la configuration Pages
+        uses: actions/configure-pages@v5
+      - name: Preparer les fichiers publics
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+  publication:
+    needs: collecte
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publier le site
+        id: deployment
+        uses: actions/deploy-pages@v4
